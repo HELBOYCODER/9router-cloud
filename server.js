@@ -41,6 +41,9 @@ const DEFAULT_PROVIDERS = {
 };
 
 function loadProviders() {
+  if (process.env.PROVIDERS_JSON) {
+    try { return JSON.parse(process.env.PROVIDERS_JSON); } catch {}
+  }
   const cfgPath = path.join(__dirname, 'providers.json');
   if (fs.existsSync(cfgPath)) {
     try { return JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
