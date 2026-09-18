@@ -107,7 +107,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (u.pathname === '/dashboard' || u.pathname === '/') {
       const p = path.join(__dirname, '9router-dashboard.html');
-      if (fs.existsSync(p)) return send(res, 200, fs.readFileSync(p, 'utf8'));
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end(fs.readFileSync(p, 'utf8'));
+      }
       return send(res, 200, { ok: true, service: '9router-cloud' });
     }
     send(res, 404, { error: 'unknown route', hint: 'use /v1/chat/completions or /v1/models' });
