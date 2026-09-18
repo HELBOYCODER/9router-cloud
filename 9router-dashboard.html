@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9Router Local Dashboard</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e6edf3;min-height:100vh;padding:20px}
+  .container{max-width:900px;margin:0 auto}
+  h1{color:#58a6ff;font-size:1.8em;margin-bottom:5px}
+  .subtitle{color:#8b949e;margin-bottom:25px;font-size:.9em}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;margin-bottom:20px}
+  .card h2{color:#c9d1d9;font-size:1.1em;margin-bottom:15px;border-bottom:1px solid #30363d;padding-bottom:8px}
+  .status-ok{color:#3fb950}.status-err{color:#f85149}.status-warn{color:#d29922}
+  table{width:100%;border-collapse:collapse;font-size:.85em}
+  th{text-align:left;color:#8b949e;padding:8px 10px;border-bottom:1px solid #30363d;font-weight:500}
+  td{padding:10px;color:#c9d1d9}
+  tr:hover{background:#1c2128}
+  .provider{font-weight:600;color:#58a6ff}
+  .model{color:#7ee787}
+  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75em;background:#238636;color:#fff}
+  .badge-err{background:#da3633}
+  .badge-warn{background:#9e6a03}
+  .ping-btn{background:#238636;border:none;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.8em}
+  .ping-btn:hover{background:#2ea043}
+  .model-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .model-chip{background:#1c2128;border:1px solid #30363d;border-radius:8px;padding:6px 12px;font-size:.8em;color:#7ee787}
+  .api-test{margin-top:15px}
+  .api-test input{flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:8px 12px;font-size:.85em}
+  .api-test button{background:#58a6ff;border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;margin-left:8px}
+  .api-test button:hover{background:#79c0ff}
+  .result{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-top:12px;font-family:monospace;font-size:.8em;white-space:pre-wrap;max-height:200px;overflow-y:auto;color:#7ee787}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+  .stat{background:#1c2128;border-radius:8px;padding:15px;text-align:center}
+  .stat-num{font-size:2em;font-weight:700;color:#58a6ff}
+  .stat-label{color:#8b949e;font-size:.8em;margin-top:5px}
+  .port{display:inline-block;background:#1c2128;border-radius:6px;padding:2px 8px;font-family:monospace;font-size:.85em;color:#79c0ff}
+  .actions{display:flex;gap:10px;margin-top:15px}
+  .actions button{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:8px 16px;border-radius:6px;cursor:pointer}
+  .actions button:hover{background:#30363d}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 9Router Local</h1>
+  <div class="subtitle">AI Gateway · Port <span class="port">20128</span> · <span id="version"></span></div>
+
+  <div class="grid">
+    <div class="stat"><div class="stat-num" id="model-count">-</div><div class="stat-label">Models</div></div>
+    <div class="stat"><div class="stat-num" id="provider-count">-</div><div class="stat-label">Providers</div></div>
+  </div>
+
+  <div class="card">
+    <h2>🟢 Status</h2>
+    <div id="health" class="status-ok">Loading...</div>
+  </div>
+
+  <div class="card">
+    <h2>🔗 Providers</h2>
+    <table>
+      <thead><tr><th>Provider</th><th>Name</th><th>Priority</th><th>Status</th></tr></thead>
+      <tbody id="providers">
+        <tr><td colspan="4" style="color:#8b949e">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>📋 Model Aliases</h2>
+    <div class="model-list" id="models"><span style="color:#8b949e">Loading...</span></div>
+  </div>
+
+  <div class="card">
+    <h2>🧪 API Test</h2>
+    <div class="api-test">
+      <input type="text" id="model-input" placeholder="Model name (e.g. qwen3.8-max)" value="qwen3.8-max">
+      <input type="text" id="prompt-input" placeholder="Prompt" value="say hi in 2 words">
+      <button onclick="testApi()">Send</button>
+    </div>
+    <div id="result" class="result" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h2>⚡ Quick Actions</h2>
+    <div class="actions">
+      <button onclick="syncCatalog()">🔄 Sync Model Catalog</button>
+      <button onclick="loadData()">🔃 Refresh</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:20128';
+const KEY = 'sk-test';
+
+async function req(path, opts={}) {
+  const r = await fetch(API + path, {
+    ...opts,
+    headers: { 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', ...opts.headers }
+  });
+  return r.json();
+}
+
+async function loadData() {
+  // Health
+  try {
+    const h = await req('/health');
+    document.getElementById('health').innerHTML = `<span class="status-ok">● Online</span> — ${JSON.stringify(h)}`;
+  } catch(e) { document.getElementById('health').innerHTML = '<span class="status-err">● Offline</span>'; }
+
+  // Models
+  const m = await req('/models');
+  const models = m.data || [];
+  document.getElementById('model-count').textContent = models.length;
+  document.getElementById('models').innerHTML = models.map(x => 
+    `<span class="model-chip">${x.id}</span>`
+  ).join('');
+
+  // Providers (from DB - just show what we configured)
+  const providers = [
+    {provider:'qwen', name:'Qwen Bridge', baseUrl:'http://127.0.0.1:7860'},
+    {provider:'deepseek', name:'Freebuff-deepseek', baseUrl:'http://127.0.0.1:3457'},
+    {provider:'z-ai', name:'Freebuff-glm', baseUrl:'http://127.0.0.1:3457'},
+    {provider:'gemini', name:'OmniBridge-gemini', baseUrl:'http://127.0.0.1:8899'},
+    {provider:'openai', name:'ChatGPT-Web2API', baseUrl:'http://127.0.0.1:8085'},
+  ];
+  document.getElementById('provider-count').textContent = providers.length;
+  document.getElementById('providers').innerHTML = providers.map(p => `
+    <tr>
+      <td class="provider">${p.provider}</td>
+      <td>${p.name}</td>
+      <td><span class="port">${p.baseUrl}</span></td>
+      <td><span class="badge">configured</span></td>
+    </tr>
+  `).join('');
+
+  // Version
+  try {
+    const v = await req('/api/version/status');
+    document.getElementById('version').textContent = 'v' + (v.version || '?');
+  } catch(e) {}
+}
+
+async function testApi() {
+  const model = document.getElementById('model-input').value;
+  const prompt = document.getElementById('prompt-input').value;
+  const result = document.getElementById('result');
+  result.style.display = 'block';
+  result.textContent = 'Sending...';
+  try {
+    const r = await fetch(API + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{role:'user',content:prompt}], max_tokens: 50 })
+    });
+    const d = await r.json();
+    if (d.error) {
+      result.textContent = JSON.stringify(d.error, null, 2);
+      result.style.color = '#f85149';
+    } else {
+      const content = d.choices?.[0]?.message?.content || JSON.stringify(d, null, 2);
+      result.textContent = content;
+      result.style.color = '#7ee787';
+    }
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+    result.style.color = '#f85149';
+  }
+}
+
+async function syncCatalog() {
+  const result = document.getElementById('result');
+  result.style.display = 'block';
+  result.textContent = 'Syncing catalog (models.dev)...';
+  result.style.color = '#79c0ff';
+  try {
+    const r = await fetch(API + '/api/models/catalog-sync', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + KEY }
+    });
+    const d = await r.json();
+    result.textContent = JSON.stringify(d, null, 2);
+    result.style.color = '#7ee787';
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+    result.style.color = '#f85149';
+  }
+}
+
+loadData();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>
